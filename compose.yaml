@@ -1,0 +1,50 @@
+services:
+  db:
+    image: postgres:17-bookworm
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-maxbot}
+      POSTGRES_USER: ${POSTGRES_USER:-maxbot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  migrate:
+    build: .
+    image: max-time-bot:local
+    env_file: ${BOT_ENV_FILE:-.env}
+    command: ["python", "-m", "app", "migrate"]
+    depends_on:
+      db:
+        condition: service_healthy
+  web:
+    build: .
+    image: max-time-bot:local
+    env_file: ${BOT_ENV_FILE:-.env}
+    command: ["python", "-m", "app", "web"]
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+  worker:
+    build: .
+    image: max-time-bot:local
+    env_file: ${BOT_ENV_FILE:-.env}
+    command: ["python", "-m", "app", "worker"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+volumes:
+  postgres-data:

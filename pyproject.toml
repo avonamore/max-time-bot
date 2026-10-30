@@ -1,0 +1,17 @@
+[project]
+name = "max-time-bot"
+version = "0.1.0"
+description = "Учет рабочего времени в MAX"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115,<1", "uvicorn>=0.34,<1", "httpx>=0.28,<1",
+  "psycopg[binary,pool]>=3.2,<4", "pydantic-settings>=2.8,<3",
+]
+[dependency-groups]
+dev = ["pytest>=8.3,<10", "ruff>=0.11,<1"]
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+[tool.ruff]
+line-length = 110
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
