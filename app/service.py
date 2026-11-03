@@ -234,6 +234,14 @@ class Service:
             if not 5 <= len(name) <= 200 or len(name.split()) < 2 or '\x00' in name:
                 raise RuleError('Введите ФИО: от 5 до 200 символов, минимум два слова.')
             self.db.execute("UPDATE employees SET full_name=%s,status='pending' WHERE max_id=%s", (name, uid))
+            # Persist the notification in the same transaction as registration.
+            # Only the new -> pending transition notifies, so repeated requests do not.
+            admins = self.db.execute("SELECT max_id FROM employees WHERE role='admin' AND status='approved'").fetchall()
+            for admin in admins:
+                self.enqueue(admin['max_id'],
+                             f'Новая заявка на регистрацию\nФИО: {name}\nMAX ID: {uid}\n'
+                             f'Для одобрения отправьте:\n/approve {uid}\n'
+                             f'Для блокировки: /block {uid}', sensitive=True)
             return 'Заявка регистрации отправлена. Ожидайте одобрения администратора.', None
         self.require(user)
         cmd, _, args = text.strip().partition(' ')

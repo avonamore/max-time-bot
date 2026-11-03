@@ -172,3 +172,27 @@ def test_correction_replaces_breaks(cfg, now, approved):
 
 def test_id_before_approval_is_only_self(cfg, now):
     assert command(cfg, 98765, '/id', now)[0] == 'Ваш MAX user_id: 98765'
+
+
+def test_registration_notifies_only_admin_once(cfg, now):
+    command(cfg, 1, '/menu', now)
+    command(cfg, 2, 'Новый Тестовый Сотрудник', now)
+    command(cfg, 2, 'Новый Тестовый Сотрудник', now)
+    command(cfg, 2, '/register Повторная Заявка', now)
+    with connect(cfg.database_url) as db:
+        rows = db.execute('SELECT * FROM outbox ORDER BY id').fetchall()
+        assert len(rows) == 1
+        assert rows[0]['recipient'] == 1 and rows[0]['sensitive']
+        text = rows[0]['body']['text']
+        assert 'Новый Тестовый Сотрудник' in text
+        assert 'MAX ID: 2' in text and '/approve 2' in text
+        assert db.execute('SELECT status FROM employees WHERE max_id=2').fetchone()['status'] == 'pending'
+
+
+def test_registration_excludes_blocked_admin(cfg, now):
+    command(cfg, 1, '/menu', now)
+    with connect(cfg.database_url) as db:
+        db.execute("INSERT INTO employees(max_id,full_name,role,status) VALUES(3,'Другой Администратор','admin','blocked')")
+    command(cfg, 2, 'Новый Тестовый Сотрудник', now)
+    with connect(cfg.database_url) as db:
+        assert [r['recipient'] for r in db.execute('SELECT recipient FROM outbox').fetchall()] == [1]

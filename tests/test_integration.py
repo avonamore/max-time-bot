@@ -208,3 +208,16 @@ def test_callback_reused_id_different_press_not_lost(cfg, now, approved):
     post(cfg, update(now+timedelta(seconds=1), text='status|0.0', mid='same-button', kind='message_callback'))
     assert process_one(cfg)
     assert process_one(cfg)
+
+
+def test_registration_webhook_redelivery_notifies_once(cfg, now):
+    command(cfg, 1, '/menu', now)
+    data = update(now, text='Новый Тестовый Сотрудник', mid='registration')
+    assert post(cfg, data).status_code == 200
+    assert process_one(cfg)
+    assert post(cfg, data).status_code == 200
+    assert not process_one(cfg)
+    with connect(cfg.database_url) as db:
+        rows = db.execute('SELECT * FROM outbox WHERE recipient=1').fetchall()
+        assert len(rows) == 1
+        assert '/approve 2' in rows[0]['body']['text']
