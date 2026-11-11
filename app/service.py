@@ -5,6 +5,7 @@ import json
 from datetime import datetime, timezone
 from psycopg.types.json import Jsonb
 from .timecalc import RuleError, aware, totals, validate_intervals, duration, period
+from .reporting import HEADERS, interval_row, interval_text
 
 ACTIONS = {'Начать работу': 'start', 'Начать перерыв': 'pause',
            'Закончить перерыв': 'resume', 'Завершить работу': 'stop',
@@ -184,11 +185,11 @@ class Service:
         target = parts.pop(0) if parts and admin else str(user['max_id']) if not admin else 'all'
         if parts or (not admin and target != str(user['max_id'])):
             raise RuleError('Некорректные параметры отчета.')
-        users = self.db.execute('SELECT * FROM employees WHERE (%s OR max_id=%s) ORDER BY max_id', (target == 'all', positive_id(target) if target != 'all' else 0)).fetchall()
+        users = self.db.execute('SELECT * FROM employees WHERE (%s OR max_id=%s) ORDER BY lower(full_name), max_id', (target == 'all', positive_id(target) if target != 'all' else 0)).fetchall()
         rows, lines = [], [f'Период: {self.stamp(left)} — {self.stamp(right)} (конец не включен).']
         for employee in users:
             uid = employee['max_id']
-            shifts = self.db.execute('SELECT * FROM shifts WHERE employee_id=%s AND ended_at IS NOT NULL AND started_at<%s AND ended_at>%s', (uid, right, left)).fetchall()
+            shifts = self.db.execute('SELECT * FROM shifts WHERE employee_id=%s AND ended_at IS NOT NULL AND started_at<%s AND ended_at>%s ORDER BY started_at,id', (uid, right, left)).fetchall()
             gross = rest = net = 0
             for shift in shifts:
                 a, b, c = totals(shift['started_at'], shift['ended_at'], self.breaks(shift['id']), left, right)
@@ -198,11 +199,19 @@ class Service:
             lines.append(f'{label} (ID {uid}): смен {len(shifts)}, длительность {duration(gross)}, перерывы {duration(rest)}, чистое {duration(net)}. Незакрытых: {len(opens)} (в итог не включены).')
             for shift in opens:
                 lines.append(f'Открыта №{shift["id"]} с {self.stamp(shift["started_at"])}.')
-            rows.append([uid, label, len(shifts), duration(gross), duration(rest), duration(net), len(opens), left.isoformat(), right.isoformat()])
+            visible_opens = [shift for shift in opens if shift['started_at'] < right and self.now >= left]
+            for shift in sorted(shifts + visible_opens, key=lambda item: (item['started_at'], item['id'])):
+                rows.append(interval_row(label, shift, self.breaks(shift['id']) if shift['ended_at'] else [],
+                                         left, right, self.cfg.org_timezone))
+        if admin:
+            lines = [lines[0], f'Время: {self.cfg.org_timezone}. Одна строка — один интервал начала и окончания работы.']
+            lines.extend(interval_text(row) for row in rows)
+            if not rows:
+                lines.append('За выбранный период интервалов работы нет.')
         if csv_export:
             out = io.StringIO(newline='')
             writer = csv.writer(out, delimiter=';')
-            writer.writerow(['MAX ID', 'ФИО', 'Смен', 'Длительность', 'Перерывы', 'Чистое время', 'Незакрытых (не в итоге)', 'С UTC', 'До UTC (исключая)'])
+            writer.writerow(HEADERS)
             for row in rows:
                 writer.writerow([("'" + x) if isinstance(x, str) and x.lstrip().startswith(('=', '+', '-', '@', '\t', '\r')) else x for x in row])
             return '\n'.join(lines), out.getvalue().encode('utf-8-sig')

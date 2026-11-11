@@ -87,11 +87,12 @@ def test_personal_reports_and_open_excluded(cfg, now, approved):
     command(cfg, 3, '=Другой Сотрудник', now)
     command(cfg, 1, '/approve 3', now)
     assert 'Другой' not in command(cfg, 2, '/hours сегодня', now)[0]
+    command(cfg, 3, 'Начать работу', now)
     _, data = command(cfg, 1, '/csv сегодня all', now)
     assert data.startswith(b'\xef\xbb\xbf')
     rows = list(csv.reader(io.StringIO(data.decode('utf-8-sig')), delimiter=';'))
-    assert rows[0][1] == 'ФИО'
-    assert any(r[1].startswith("'=") for r in rows[1:])
+    assert rows[0][0] == 'ФИО'
+    assert any(r[0].startswith("'=") for r in rows[1:])
 
 
 def closed(cfg, now):
