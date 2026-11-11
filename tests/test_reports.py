@@ -5,10 +5,11 @@ from app.timecalc import aware
 from conftest import command
 
 
-def export(cfg, now, args='сегодня all'):
+def export(cfg, now, args='сегодня all', include_totals=False):
     text, data = command(cfg, 1, '/csv ' + args, now)
     assert data.startswith(b'\xef\xbb\xbf')
-    return text, list(csv.DictReader(io.StringIO(data.decode('utf-8-sig')), delimiter=';'))
+    rows = list(csv.DictReader(io.StringIO(data.decode('utf-8-sig')), delimiter=';'))
+    return text, rows if include_totals else [row for row in rows if row['Статус'] != 'Итого за день']
 
 
 def test_two_intervals_same_employee_same_day(cfg, now, approved):
@@ -81,3 +82,45 @@ def test_detailed_report_uses_approved_correction(cfg, now, approved):
     _, rows = export(cfg, now)
     assert rows[0]['Окончание работы'] == '02.11.2026 13:00:00'
     assert rows[0]['Рабочее время'] == '05:00:00'
+
+
+def test_daily_total_sums_intervals_without_double_counting(cfg, now, approved):
+    start = aware('2026-11-02T08:00+06:00')
+    command(cfg, 2, 'Начать работу', start)
+    command(cfg, 2, 'Начать перерыв', start+timedelta(hours=1))
+    command(cfg, 2, 'Закончить перерыв', start+timedelta(hours=2))
+    command(cfg, 2, 'Завершить работу', start+timedelta(hours=4))
+    command(cfg, 2, 'Начать работу', start+timedelta(hours=5))
+    command(cfg, 2, 'Завершить работу', start+timedelta(hours=10))
+    text, rows = export(cfg, now, include_totals=True)
+    assert len(rows) == 3
+    assert [r['Итого за день'] for r in rows] == ['', '', '08:00:00']
+    assert rows[-1]['Статус'] == 'Итого за день'
+    # The subtotal uses a separate column, so summing interval hours does not count it twice.
+    assert rows[-1]['Рабочее время'] == ''
+    assert 'Итого за день: 08:00:00' in text
+
+
+def test_overnight_daily_totals_split_at_local_midnight(cfg, now, approved):
+    start = aware('2026-11-02T23:00+06:00')
+    command(cfg, 2, 'Начать работу', start)
+    command(cfg, 2, 'Начать перерыв', start+timedelta(minutes=30))
+    command(cfg, 2, 'Закончить перерыв', start+timedelta(hours=1, minutes=30))
+    command(cfg, 2, 'Завершить работу', start+timedelta(hours=4))
+    _, rows = export(cfg, start+timedelta(hours=5), '2026-11-02 2026-11-03 all', include_totals=True)
+    sums = [r for r in rows if r['Статус'] == 'Итого за день']
+    assert [(r['Дата'], r['Итого за день']) for r in sums] == [('02.11.2026', '00:30:00'), ('03.11.2026', '02:30:00')]
+    _, rows = export(cfg, start+timedelta(hours=5), '2026-11-03 2026-11-03 all', include_totals=True)
+    sums = [r for r in rows if r['Статус'] == 'Итого за день']
+    assert len(sums) == 1 and sums[0]['Дата'] == '03.11.2026' and sums[0]['Итого за день'] == '02:30:00'
+
+
+def test_daily_total_excludes_unclosed_interval(cfg, now, approved):
+    start = aware('2026-11-02T08:00+06:00')
+    command(cfg, 2, 'Начать работу', start)
+    command(cfg, 2, 'Завершить работу', start+timedelta(hours=2))
+    command(cfg, 2, 'Начать работу', start+timedelta(hours=3))
+    _, rows = export(cfg, now, include_totals=True)
+    assert len(rows) == 3
+    assert rows[-1]['Итого за день'] == '02:00:00'
+    assert any(r['Статус'] == 'Не завершен' and r['Рабочее время'] == '' for r in rows)

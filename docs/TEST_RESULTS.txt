@@ -1,4 +1,4 @@
-.......................................                                  [100%]
+..........................................                               [100%]
 =============================== warnings summary ===============================
 .venv/lib/python3.12/site-packages/fastapi/testclient.py:1
   /workspace/max-time-bot/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
@@ -16,11 +16,11 @@ app/config.py         40     11    72%   22-24, 29, 34-35, 40-43, 48
 app/db.py             13      2    85%   16-17
 app/events.py         32      7    78%   18, 21-24, 31, 35
 app/max_api.py        73     16    78%   22, 38-42, 45-46, 53-54, 56, 58, 62, 87-89
-app/reporting.py      23      0   100%
-app/service.py       259     27    90%   35, 58, 93, 114, 143, 146, 182, 238, 244, 266, 276, 278-279, 283-285, 293, 298-300, 302-303, 307-310, 313
+app/reporting.py      51      1    98%   53
+app/service.py       262     27    90%   35, 58, 93, 114, 143, 146, 182, 242, 248, 270, 280, 282-283, 287-289, 297, 302-304, 306-307, 311-314, 317
 app/timecalc.py       48      3    94%   45, 49, 55
 app/web.py            39      0   100%
 app/worker.py         79     18    77%   45, 64-67, 79-93
 ------------------------------------------------
-TOTAL                645    123    81%
-39 passed, 1 warning in 6.11s
+TOTAL                676    124    82%
+42 passed, 1 warning in 5.37s

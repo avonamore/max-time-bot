@@ -5,7 +5,7 @@ import json
 from datetime import datetime, timezone
 from psycopg.types.json import Jsonb
 from .timecalc import RuleError, aware, totals, validate_intervals, duration, period
-from .reporting import HEADERS, interval_row, interval_text
+from .reporting import HEADERS, interval_row, interval_text, with_daily_totals
 
 ACTIONS = {'Начать работу': 'start', 'Начать перерыв': 'pause',
            'Закончить перерыв': 'resume', 'Завершить работу': 'stop',
@@ -191,8 +191,9 @@ class Service:
             uid = employee['max_id']
             shifts = self.db.execute('SELECT * FROM shifts WHERE employee_id=%s AND ended_at IS NOT NULL AND started_at<%s AND ended_at>%s ORDER BY started_at,id', (uid, right, left)).fetchall()
             gross = rest = net = 0
+            breaks_by_shift = {shift['id']: self.breaks(shift['id']) for shift in shifts}
             for shift in shifts:
-                a, b, c = totals(shift['started_at'], shift['ended_at'], self.breaks(shift['id']), left, right)
+                a, b, c = totals(shift['started_at'], shift['ended_at'], breaks_by_shift[shift['id']], left, right)
                 gross += a; rest += b; net += c
             opens = self.db.execute('SELECT * FROM shifts WHERE employee_id=%s AND ended_at IS NULL', (uid,)).fetchall()
             label = employee['full_name'] or f'ID {uid}'
@@ -200,9 +201,12 @@ class Service:
             for shift in opens:
                 lines.append(f'Открыта №{shift["id"]} с {self.stamp(shift["started_at"])}.')
             visible_opens = [shift for shift in opens if shift['started_at'] < right and self.now >= left]
+            employee_rows = []
             for shift in sorted(shifts + visible_opens, key=lambda item: (item['started_at'], item['id'])):
-                rows.append(interval_row(label, shift, self.breaks(shift['id']) if shift['ended_at'] else [],
-                                         left, right, self.cfg.org_timezone))
+                employee_rows.append(interval_row(label, shift, breaks_by_shift.get(shift['id'], []),
+                                                  left, right, self.cfg.org_timezone))
+            rows.extend(with_daily_totals(label, employee_rows, shifts, breaks_by_shift,
+                                          left, right, self.cfg.org_timezone))
         if admin:
             lines = [lines[0], f'Время: {self.cfg.org_timezone}. Одна строка — один интервал начала и окончания работы.']
             lines.extend(interval_text(row) for row in rows)
